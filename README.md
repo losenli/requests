@@ -1,17 +1,15 @@
 
-[![license](http://dmlc.github.io/img/apache2.svg)](https://raw.githubusercontent.com/asmcos/requests/master/LICENSE)
-
 # requests
 
 Requests is an HTTP library  , it is easy to use. Similar to Python requests.
 
-# Installation
+# 使用go get安装
 
 ```
 go get -u github.com/asmcos/requests
 ```
 
-# Start
+# 简单的GET请求
 
 ``` go
 package main
@@ -28,7 +26,7 @@ func main (){
 }
 ```
 
-## Post
+## Post请求
 
 ``` go
 package main
@@ -38,7 +36,7 @@ import "github.com/asmcos/requests"
 
 func main (){
 
-        data := requests.Datas{
+        data := requests.DataItem{
           "name":"requests_post_test",
         }
         resp,_ := requests.Post("https://www.httpbin.org/post",data)
@@ -115,19 +113,6 @@ func main (){
 
 ```
 
-# Feature Support
-  - Set headers
-  - Set params
-  - Multipart File Uploads
-  - Sessions with Cookie Persistence
-  - Proxy
-  - Authentication
-  - JSON
-  - Chunked Requests
-  - Debug
-  - SetTimeout
-
-
 # Set header
 
 ### example 1
@@ -199,19 +184,24 @@ github return
 {"login":"asmcos","id":xxxxx,"node_id":"Mxxxxxxxxx==".....
 ```
 
-# JSON
+# 返回JSON数据
 
-``` go
+```go
 req := requests.Requests()
-req.Header.Set("Content-Type","application/json")
-resp,_ = req.Get("https://httpbin.org/json")
+resp,_ := req.Get("https://httpbin.org/json")
+// 返回json数据，使用Map反序列化
+result, _ := resp.Json()
 
-var json map[string]interface{}
-resp.Json(&json)
-
-for k,v := range json{
-  fmt.Println(k,v)
+for k,v := range result{
+	fmt.Println(k,v)
 }
+```
+# 引入gjson.result
+```go
+req := requests.Requests()
+resp,_ := req.Get("https://httpbin.org/json")
+// Result()返回gjson.Result
+fmt.Println(resp.Result().Get("slideshow.slides.1.title"))
 ```
 
 

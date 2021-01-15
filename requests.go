@@ -1,4 +1,4 @@
-/* Copyright（2） 2018 by  asmcos .
+/* Copyright（2） 2018 by  Mr.Li .
 Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
  You may obtain a copy of the License at
@@ -20,6 +20,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"github.com/tidwall/gjson"
 	"io"
 	"io/ioutil"
 	"mime/multipart"
@@ -32,16 +33,19 @@ import (
 	"time"
 )
 
-var VERSION string = "0.7"
+// 版本号
+var VERSION = "0.7.1"
 
+// 封装请求结构体
 type Request struct {
-	httpreq *http.Request
+	httpReq *http.Request
 	Header  *http.Header
 	Client  *http.Client
 	Debug   int
 	Cookies []*http.Cookie
 }
 
+// 封装响应结构体
 type Response struct {
 	R       *http.Response
 	content []byte
@@ -49,27 +53,26 @@ type Response struct {
 	req     *Request
 }
 
+// 自定义类型
 type Header map[string]string
 type Params map[string]string
-type Datas map[string]string // for post form
-type Files map[string]string // name ,filename
-
-// {username,password}
+type DataItem map[string]string
+type Files map[string]string
 type Auth []string
 
 func Requests() *Request {
 
-	req := new(Request)
+	var req Request
 
-	req.httpreq = &http.Request{
+	req.httpReq = &http.Request{
 		Method:     "GET",
 		Header:     make(http.Header),
 		Proto:      "HTTP/1.1",
 		ProtoMajor: 1,
 		ProtoMinor: 1,
 	}
-	req.Header = &req.httpreq.Header
-	req.httpreq.Header.Set("User-Agent", "Go-Requests "+VERSION)
+	req.Header = &req.httpReq.Header
+	req.httpReq.Header.Set("User-Agent", "Go-Requests: "+VERSION)
 
 	req.Client = &http.Client{}
 
@@ -79,63 +82,54 @@ func Requests() *Request {
 
 	req.Client.Jar = jar
 
-	return req
+	return &req
 }
 
-// Get ,req.Get
-
-func Get(origurl string, args ...interface{}) (resp *Response, err error) {
+func Get(origUrl string, args ...interface{}) (resp *Response, err error) {
 	req := Requests()
 
-	// call request Get
-	resp, err = req.Get(origurl, args...)
+	resp, err = req.Get(origUrl, args...)
 	return resp, err
 }
 
-func (req *Request) Get(origurl string, args ...interface{}) (resp *Response, err error) {
+func (req *Request) Get(origUrl string, args ...interface{}) (resp *Response, err error) {
 
-	req.httpreq.Method = "GET"
+	req.httpReq.Method = http.MethodGet
 
 	// set params ?a=b&b=c
 	//set Header
-	params := []map[string]string{}
+	var params []map[string]string
 
 	//reset Cookies,
 	//Client.Do can copy cookie from client.Jar to req.Header
-	delete(req.httpreq.Header, "Cookie")
+	delete(req.httpReq.Header, "Cookie")
 
 	for _, arg := range args {
 		switch a := arg.(type) {
 		// arg is Header , set to request header
 		case Header:
-
 			for k, v := range a {
 				req.Header.Set(k, v)
 			}
-			// arg is "GET" params
-			// ?title=website&id=1860&from=login
 		case Params:
 			params = append(params, a)
 		case Auth:
-			// a{username,password}
-			req.httpreq.SetBasicAuth(a[0], a[1])
+			req.httpReq.SetBasicAuth(a[0], a[1])
 		}
 	}
+	distUrl, _ := buildURLParams(origUrl, params...)
 
-	disturl, _ := buildURLParams(origurl, params...)
-
-	//prepare to Do
-	URL, err := url.Parse(disturl)
+	URL, err := url.Parse(distUrl)
 	if err != nil {
 		return nil, err
 	}
-	req.httpreq.URL = URL
+	req.httpReq.URL = URL
 
 	req.ClientSetCookies()
 
 	req.RequestDebug()
 
-	res, err := req.Client.Do(req.httpreq)
+	res, err := req.Client.Do(req.httpReq)
 
 	if err != nil {
 		fmt.Println(err)
@@ -186,15 +180,15 @@ func (req *Request) RequestDebug() {
 
 	fmt.Println("===========Go RequestDebug ============")
 
-	message, err := httputil.DumpRequestOut(req.httpreq, false)
+	message, err := httputil.DumpRequestOut(req.httpReq, false)
 	if err != nil {
 		return
 	}
 	fmt.Println(string(message))
 
-	if len(req.Client.Jar.Cookies(req.httpreq.URL)) > 0 {
+	if len(req.Client.Jar.Cookies(req.httpReq.URL)) > 0 {
 		fmt.Println("Cookies:")
-		for _, cookie := range req.Client.Jar.Cookies(req.httpreq.URL) {
+		for _, cookie := range req.Client.Jar.Cookies(req.httpReq.URL) {
 			fmt.Println(cookie)
 		}
 	}
@@ -216,7 +210,7 @@ func (req *Request) ClientSetCookies() {
 	if len(req.Cookies) > 0 {
 		// 1. Cookies have content, Copy Cookies to Client.jar
 		// 2. Clear  Cookies
-		req.Client.Jar.SetCookies(req.httpreq.URL, req.Cookies)
+		req.Client.Jar.SetCookies(req.httpReq.URL, req.Cookies)
 		req.ClearCookies()
 	}
 
@@ -224,31 +218,28 @@ func (req *Request) ClientSetCookies() {
 
 // set timeout s = second
 func (req *Request) SetTimeout(n time.Duration) {
-	req.Client.Timeout = time.Duration(n * time.Second)
+	req.Client.Timeout = n * time.Second
 }
 
-func (req *Request) Proxy(proxyurl string) {
+func (req *Request) Proxy(proxyUrl string) {
 
-	urli := url.URL{}
-	urlproxy, err := urli.Parse(proxyurl)
+	URI := url.URL{}
+	urlProxy, err := URI.Parse(proxyUrl)
 	if err != nil {
 		fmt.Println("Set proxy failed")
 		return
 	}
 	req.Client.Transport = &http.Transport{
-		Proxy:           http.ProxyURL(urlproxy),
+		Proxy:           http.ProxyURL(urlProxy),
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
 
 }
 
-/**************/
 func (resp *Response) ResponseDebug() {
-
 	if resp.req.Debug != 1 {
 		return
 	}
-
 	fmt.Println("===========Go ResponseDebug ============")
 
 	message, err := httputil.DumpResponse(resp.R, false)
@@ -302,71 +293,78 @@ func (resp *Response) SaveFile(filename string) error {
 	defer f.Close()
 
 	_, err = f.Write(resp.content)
-	f.Sync()
+	_ = f.Sync()
 
 	return err
 }
 
-func (resp *Response) Json(v interface{}) error {
+// 对响应反序列化操作
+func (resp *Response) Unmarshal(v interface{}) error {
 	if resp.content == nil {
 		resp.Content()
 	}
 	return json.Unmarshal(resp.content, v)
 }
 
+// 使用Map反序列化响应
+func (resp *Response) Json() (map[string]interface{}, error) {
+	var result = make(map[string]interface{})
+	if err := resp.Unmarshal(&result); err != nil {
+		return nil, err
+	} else {
+		return result, nil
+	}
+}
+
+// 引入gjson
+func (resp *Response) Result() gjson.Result {
+	if resp.text == "" {
+		resp.Text()
+	}
+	return gjson.Parse(resp.text)
+}
+
 func (resp *Response) Cookies() (cookies []*http.Cookie) {
-	httpreq := resp.req.httpreq
+	httpReq := resp.req.httpReq
 	client := resp.req.Client
 
-	cookies = client.Jar.Cookies(httpreq.URL)
+	cookies = client.Jar.Cookies(httpReq.URL)
 
 	return cookies
 
 }
 
-/**************post*************************/
-// call req.Post ,only for easy
-func Post(origurl string, args ...interface{}) (resp *Response, err error) {
+func Post(origUrl string, args ...interface{}) (resp *Response, err error) {
 	req := Requests()
 
-	// call request Get
-	resp, err = req.Post(origurl, args...)
+	resp, err = req.Post(origUrl, args...)
 	return resp, err
 }
 
-func PostJson(origurl string, args ...interface{}) (resp *Response, err error) {
+func PostJson(origUrl string, args ...interface{}) (resp *Response, err error) {
 	req := Requests()
 
-	// call request Get
-	resp, err = req.PostJson(origurl, args...)
+	resp, err = req.PostJson(origUrl, args...)
 	return resp, err
 }
 
-// POST requests
+func (req *Request) PostJson(origUrl string, args ...interface{}) (resp *Response, err error) {
 
-func (req *Request) PostJson(origurl string, args ...interface{}) (resp *Response, err error) {
-
-	req.httpreq.Method = "POST"
-
+	req.httpReq.Method = http.MethodPost
 	req.Header.Add("Content-Type", "application/json")
 
-	//reset Cookies,
-	//Client.Do can copy cookie from client.Jar to req.Header
-	delete(req.httpreq.Header, "Cookie")
+	delete(req.httpReq.Header, "Cookie")
 
 	for _, arg := range args {
 		switch a := arg.(type) {
-		// arg is Header , set to request header
 		case Header:
-
 			for k, v := range a {
 				req.Header.Set(k, v)
 			}
 		case string:
 			req.setBodyRawBytes(ioutil.NopCloser(strings.NewReader(arg.(string))))
 		case Auth:
-			// a{username,password}
-			req.httpreq.SetBasicAuth(a[0], a[1])
+			req.httpReq.SetBasicAuth(a[0], a[1])
 		default:
 			b := new(bytes.Buffer)
 			err = json.NewEncoder(b).Encode(a)
@@ -377,23 +375,20 @@ func (req *Request) PostJson(origurl string, args ...interface{}) (resp *Respons
 		}
 	}
 
-	//prepare to Do
-	URL, err := url.Parse(origurl)
+	URL, err := url.Parse(origUrl)
 	if err != nil {
 		return nil, err
 	}
-	req.httpreq.URL = URL
+	req.httpReq.URL = URL
 
 	req.ClientSetCookies()
 
 	req.RequestDebug()
 
-	res, err := req.Client.Do(req.httpreq)
-
-	// clear post  request information
-	req.httpreq.Body = nil
-	req.httpreq.GetBody = nil
-	req.httpreq.ContentLength = 0
+	res, err := req.Client.Do(req.httpReq)
+	req.httpReq.Body = nil
+	req.httpReq.GetBody = nil
+	req.httpReq.ContentLength = 0
 
 	if err != nil {
 		fmt.Println(err)
@@ -407,9 +402,9 @@ func (req *Request) PostJson(origurl string, args ...interface{}) (resp *Respons
 	return resp, nil
 }
 
-func (req *Request) Post(origurl string, args ...interface{}) (resp *Response, err error) {
+func (req *Request) Post(origUrl string, args ...interface{}) (resp *Response, err error) {
 
-	req.httpreq.Method = "POST"
+	req.httpReq.Method = http.MethodPost
 
 	if req.Header.Get("Content-Type") != "" {
 		req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
@@ -417,63 +412,57 @@ func (req *Request) Post(origurl string, args ...interface{}) (resp *Response, e
 
 	// set params ?a=b&b=c
 	//set Header
-	params := []map[string]string{}
-	datas := []map[string]string{} // POST
-	files := []map[string]string{} //post file
+	var params []map[string]string
+	var dataItem []map[string]string
+	var files []map[string]string
 
 	//reset Cookies,
 	//Client.Do can copy cookie from client.Jar to req.Header
-	delete(req.httpreq.Header, "Cookie")
+	delete(req.httpReq.Header, "Cookie")
 
 	for _, arg := range args {
 		switch a := arg.(type) {
 		// arg is Header , set to request header
 		case Header:
-
 			for k, v := range a {
 				req.Header.Set(k, v)
 			}
-			// arg is "GET" params
-			// ?title=website&id=1860&from=login
 		case Params:
 			params = append(params, a)
-
-		case Datas: //Post form data,packaged in body.
-			datas = append(datas, a)
+		case DataItem:
+			dataItem = append(dataItem, a)
 		case Files:
 			files = append(files, a)
 		case Auth:
-			// a{username,password}
-			req.httpreq.SetBasicAuth(a[0], a[1])
+			req.httpReq.SetBasicAuth(a[0], a[1])
 		}
 	}
-
-	disturl, _ := buildURLParams(origurl, params...)
+	distUrl, _ := buildURLParams(origUrl, params...)
 
 	if len(files) > 0 {
-		req.buildFilesAndForms(files, datas)
+		req.buildFilesAndForms(files, dataItem)
 
 	} else {
-		Forms := req.buildForms(datas...)
+		Forms := req.buildForms(dataItem...)
 		req.setBodyBytes(Forms) // set forms to body
 	}
 	//prepare to Do
-	URL, err := url.Parse(disturl)
+	URL, err := url.Parse(distUrl)
 	if err != nil {
 		return nil, err
 	}
-	req.httpreq.URL = URL
+	req.httpReq.URL = URL
 
 	req.ClientSetCookies()
 
 	req.RequestDebug()
 
-	res, err := req.Client.Do(req.httpreq)
+	res, err := req.Client.Do(req.httpReq)
 
 	// clear post param
-	req.httpreq.Body = nil
-	req.httpreq.GetBody = nil
-	req.httpreq.ContentLength = 0
+	req.httpReq.Body = nil
+	req.httpReq.GetBody = nil
+	req.httpReq.ContentLength = 0
 
 	if err != nil {
 		fmt.Println(err)
@@ -492,18 +481,18 @@ func (req *Request) setBodyBytes(Forms url.Values) {
 
 	// maybe
 	data := Forms.Encode()
-	req.httpreq.Body = ioutil.NopCloser(strings.NewReader(data))
-	req.httpreq.ContentLength = int64(len(data))
+	req.httpReq.Body = ioutil.NopCloser(strings.NewReader(data))
+	req.httpReq.ContentLength = int64(len(data))
 }
 
 // only set forms
 func (req *Request) setBodyRawBytes(read io.ReadCloser) {
-	req.httpreq.Body = read
+	req.httpReq.Body = read
 }
 
 // upload file and form
 // build to body format
-func (req *Request) buildFilesAndForms(files []map[string]string, datas []map[string]string) {
+func (req *Request) buildFilesAndForms(files []map[string]string, dataItem []map[string]string) {
 
 	//handle file multipart
 
@@ -525,24 +514,22 @@ func (req *Request) buildFilesAndForms(files []map[string]string, datas []map[st
 		}
 	}
 
-	for _, data := range datas {
+	for _, data := range dataItem {
 		for k, v := range data {
-			w.WriteField(k, v)
+			_ = w.WriteField(k, v)
 		}
 	}
 
-	w.Close()
-	// set file header example:
-	// "Content-Type": "multipart/form-data; boundary=------------------------7d87eceb5520850c",
-	req.httpreq.Body = ioutil.NopCloser(bytes.NewReader(b.Bytes()))
-	req.httpreq.ContentLength = int64(b.Len())
+	_ = w.Close()
+	req.httpReq.Body = ioutil.NopCloser(bytes.NewReader(b.Bytes()))
+	req.httpReq.ContentLength = int64(b.Len())
 	req.Header.Set("Content-Type", w.FormDataContentType())
 }
 
 // build post Form data
-func (req *Request) buildForms(datas ...map[string]string) (Forms url.Values) {
+func (req *Request) buildForms(dataItem ...map[string]string) (Forms url.Values) {
 	Forms = url.Values{}
-	for _, data := range datas {
+	for _, data := range dataItem {
 		for key, value := range data {
 			Forms.Add(key, value)
 		}

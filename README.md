@@ -1,75 +1,51 @@
 
-# requests
+## requests
 
-Requests is an HTTP library  , it is easy to use. Similar to Python requests.
+一个类似 Python requests 的 Go HTTP 请求库
 
-# 使用go get安装
+## 使用go get安装
 
 ```
-go get -u github.com/asmcos/requests
+go get -u github.com/losenli/requests
 ```
 
-# 简单的GET请求
+## 简单的GET请求
 
-``` go
+```go
 package main
 
-import "github.com/asmcos/requests"
+import (
+	"github.com/losenli/requests"
+	"log"
+)
 
 func main (){
-
-        resp,err := requests.Get("http://www.zhanluejia.net.cn")
-        if err != nil{
-          return
-        }
-        println(resp.Text())
+	resp,err := requests.Get("https://www.httpbin.org/get")
+	if err != nil{
+		log.Fatalln(err)
+	}
+	log.Println(resp.Text())
 }
 ```
 
 ## Post请求
 
-``` go
+```go
 package main
 
-import "github.com/asmcos/requests"
+import (
+	"github.com/losenli/requests"
+	"log"
+)
 
-
-func main (){
-
-        data := requests.DataItem{
-          "name":"requests_post_test",
-        }
-        resp,_ := requests.Post("https://www.httpbin.org/post",data)
-        println(resp.Text())
+func main() {
+	data := requests.DataItem{
+		"name": "requests_post_test",
+	}
+	resp, _ := requests.Post("https://www.httpbin.org/post", data)
+	log.Println(resp.Text())
 }
-
 ```
-
-     Server return data...
-
-``` json
-{
-  "args": {},
-  "data": "",
-  "files": {},
-  "form": {
-    "name": "requests_post_test"
-  },
-  "headers": {
-    "Accept-Encoding": "gzip",
-    "Connection": "close",
-    "Content-Length": "23",
-    "Content-Type": "application/x-www-form-urlencoded",
-    "Host": "www.httpbin.org",
-    "User-Agent": "Go-Requests 0.5"
-  },
-  "json": null,
-  "origin": "114.242.34.110",
-  "url": "https://www.httpbin.org/post"
-}
-
-```
-
 
 ## PostJson
 
@@ -84,31 +60,6 @@ func main (){
         jsonStr := "{\"name\":\"requests_post_test\"}"
         resp,_ := requests.PostJson("https://www.httpbin.org/post",jsonStr)
         println(resp.Text())
-}
-
-```
-
-     Server return data...
-
-``` json
-{
-  "args": {},
-  "data": "",
-  "files": {},
-  "form": {
-    "name": "requests_post_test"
-  },
-  "headers": {
-    "Accept-Encoding": "gzip",
-    "Connection": "close",
-    "Content-Length": "23",
-    "Content-Type": "application/x-www-form-urlencoded",
-    "Host": "www.httpbin.org",
-    "User-Agent": "Go-Requests 0.5"
-  },
-  "json": null,
-  "origin": "114.242.34.110",
-  "url": "https://www.httpbin.org/post"
 }
 
 ```
@@ -155,7 +106,7 @@ resp,_ = req.Get("http://www.zhanluejia.net.cn",h,h2,h3,h4)
 ```
 
 
-# Set params
+# GET请求设置Params参数
 
 ``` go
 p := requests.Params{
@@ -196,7 +147,7 @@ for k,v := range result{
 	fmt.Println(k,v)
 }
 ```
-# 引入gjson.result
+# 引入gjson.Result
 ```go
 req := requests.Requests()
 resp,_ := req.Get("https://httpbin.org/json")

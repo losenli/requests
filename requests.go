@@ -1,26 +1,11 @@
-/* Copyright（2） 2018 by  Mr.Li .
-Licensed under the Apache License, Version 2.0 (the "License");
- you may not use this file except in compliance with the License.
- You may obtain a copy of the License at
-
-     http://www.apache.org/licenses/LICENSE-2.0
-
- Unless required by applicable law or agreed to in writing, software
- distributed under the License is distributed on an "AS IS" BASIS,
- WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- See the License for the specific language governing permissions and
- limitations under the License.
-*/
-
 package requests
 
 import (
 	"bytes"
-	"compress/gzip"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"github.com/tidwall/gjson"
 	"io"
 	"io/ioutil"
 	"mime/multipart"
@@ -33,26 +18,6 @@ import (
 	"time"
 )
 
-// 版本号
-var VERSION = "0.7.1"
-
-// 封装请求结构体
-type Request struct {
-	httpReq *http.Request
-	Header  *http.Header
-	Client  *http.Client
-	Debug   int
-	Cookies []*http.Cookie
-}
-
-// 封装响应结构体
-type Response struct {
-	R       *http.Response
-	content []byte
-	text    string
-	req     *Request
-}
-
 // 自定义类型
 type Header map[string]string
 type Params map[string]string
@@ -60,8 +25,17 @@ type DataItem map[string]string
 type Files map[string]string
 type Auth []string
 
-func Requests() *Request {
+// 封装请求结构体
+type Request struct {
+	httpReq *http.Request
+	Header  *http.Header
+	Client  *http.Client
+	Debug   int
+	Host    string
+	Cookies []*http.Cookie
+}
 
+func Requests() *Request {
 	var req Request
 
 	req.httpReq = &http.Request{
@@ -72,41 +46,39 @@ func Requests() *Request {
 		ProtoMinor: 1,
 	}
 	req.Header = &req.httpReq.Header
-	req.httpReq.Header.Set("User-Agent", "Go-Requests: "+VERSION)
+	req.httpReq.Header.Set("User-Agent", "Go-Requests")
 
 	req.Client = &http.Client{}
-
-	// auto with Cookies
-	// cookiejar.New source code return jar, nil
 	jar, _ := cookiejar.New(nil)
-
 	req.Client.Jar = jar
 
 	return &req
 }
 
+// 发送HTTP请求
+func (req *Request) Send(method, url string, args ...interface{}) (resp *Response, err error) {
+	if strings.TrimSpace(method) == "" {
+		return nil, errors.New("method can't be empty")
+	}
+	req.httpReq.Method = strings.ToUpper(method)
+	return nil, nil
+}
+
 func Get(origUrl string, args ...interface{}) (resp *Response, err error) {
 	req := Requests()
-
 	resp, err = req.Get(origUrl, args...)
 	return resp, err
 }
 
 func (req *Request) Get(origUrl string, args ...interface{}) (resp *Response, err error) {
-
 	req.httpReq.Method = http.MethodGet
 
-	// set params ?a=b&b=c
-	//set Header
 	var params []map[string]string
 
-	//reset Cookies,
-	//Client.Do can copy cookie from client.Jar to req.Header
 	delete(req.httpReq.Header, "Cookie")
 
 	for _, arg := range args {
 		switch a := arg.(type) {
-		// arg is Header , set to request header
 		case Header:
 			for k, v := range a {
 				req.Header.Set(k, v)
@@ -143,10 +115,8 @@ func (req *Request) Get(origUrl string, args ...interface{}) (resp *Response, er
 	return resp, nil
 }
 
-// handle URL params
 func buildURLParams(userURL string, params ...map[string]string) (string, error) {
 	parsedURL, err := url.Parse(userURL)
-
 	if err != nil {
 		return "", err
 	}
@@ -178,8 +148,6 @@ func (req *Request) RequestDebug() {
 		return
 	}
 
-	fmt.Println("===========Go RequestDebug ============")
-
 	message, err := httputil.DumpRequestOut(req.httpReq, false)
 	if err != nil {
 		return
@@ -194,9 +162,6 @@ func (req *Request) RequestDebug() {
 	}
 }
 
-// cookies
-// cookies only save to Client.Jar
-// req.Cookies is temporary
 func (req *Request) SetCookie(cookie *http.Cookie) {
 	req.Cookies = append(req.Cookies, cookie)
 }
@@ -248,89 +213,6 @@ func (resp *Response) ResponseDebug() {
 	}
 
 	fmt.Println(string(message))
-
-}
-
-func (resp *Response) Content() []byte {
-
-	defer resp.R.Body.Close()
-	var err error
-
-	var Body = resp.R.Body
-	if resp.R.Header.Get("Content-Encoding") == "gzip" && resp.req.Header.Get("Accept-Encoding") != "" {
-		// fmt.Println("gzip")
-		reader, err := gzip.NewReader(Body)
-		if err != nil {
-			return nil
-		}
-		Body = reader
-	}
-
-	resp.content, err = ioutil.ReadAll(Body)
-	if err != nil {
-		return nil
-	}
-
-	return resp.content
-}
-
-func (resp *Response) Text() string {
-	if resp.content == nil {
-		resp.Content()
-	}
-	resp.text = string(resp.content)
-	return resp.text
-}
-
-func (resp *Response) SaveFile(filename string) error {
-	if resp.content == nil {
-		resp.Content()
-	}
-	f, err := os.Create(filename)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	_, err = f.Write(resp.content)
-	_ = f.Sync()
-
-	return err
-}
-
-// 对响应反序列化操作
-func (resp *Response) Unmarshal(v interface{}) error {
-	if resp.content == nil {
-		resp.Content()
-	}
-	return json.Unmarshal(resp.content, v)
-}
-
-// 使用Map反序列化响应
-func (resp *Response) Json() (map[string]interface{}, error) {
-	var result = make(map[string]interface{})
-	if err := resp.Unmarshal(&result); err != nil {
-		return nil, err
-	} else {
-		return result, nil
-	}
-}
-
-// 引入gjson
-func (resp *Response) Result() gjson.Result {
-	if resp.text == "" {
-		resp.Text()
-	}
-	return gjson.Parse(resp.text)
-}
-
-func (resp *Response) Cookies() (cookies []*http.Cookie) {
-	httpReq := resp.req.httpReq
-	client := resp.req.Client
-
-	cookies = client.Jar.Cookies(httpReq.URL)
-
-	return cookies
 
 }
 

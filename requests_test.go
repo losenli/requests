@@ -1,28 +1,25 @@
 package requests
 
 import (
-	"net/http"
+	"log"
 	"testing"
 )
 
-var req = Requests()
-
-func TestGet(t *testing.T) {
-	resp, err := Get("https://www.httpbin.org/get")
+func TestPostJson(t *testing.T) {
+	data := `{"name": "lzh"}`
+	resp, err := PostJson("http://httpbin.org/post", data)
 	if err != nil {
 		t.Error(err)
 	}
-	if resp.R.StatusCode != http.StatusOK {
-		t.Error("状态码异常！")
-	}
+	log.Println(resp.Time)
 }
 
-func TestRequest_Get(t *testing.T) {
-	resp, err := req.Get("https://www.httpbin.org/get")
+func TestRequest_Send(t *testing.T) {
+	req := Requests()
+	//data := `{"name": "lzh"}`
+	resp, err := req.Send("Put", "http://httpbin.org/put")
 	if err != nil {
 		t.Error(err)
 	}
-	if resp.R.StatusCode != http.StatusOK {
-		t.Error("状态码异常！")
-	}
+	log.Println(resp.Time)
 }
